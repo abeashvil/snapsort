@@ -17,11 +17,22 @@ struct APIConfig {
     /// Name: OPENAI_API_KEY
     /// Value: your-api-key-here
     static var openAIAPIKey: String? {
-        guard let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
-              !key.isEmpty,
-              key != "YOUR_API_KEY_HERE" else {
+        guard let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+            print("DEBUG: Config - OPENAI_API_KEY environment variable not found")
             return nil
         }
+        
+        guard !key.isEmpty else {
+            print("DEBUG: Config - OPENAI_API_KEY is empty")
+            return nil
+        }
+        
+        guard key != "YOUR_API_KEY_HERE" else {
+            print("DEBUG: Config - OPENAI_API_KEY is still set to placeholder value")
+            return nil
+        }
+        
+        print("DEBUG: Config - OpenAI API key found and valid (length: \(key.count))")
         return key
     }
     

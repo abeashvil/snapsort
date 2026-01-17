@@ -28,6 +28,7 @@ struct LandingPageView: View {
     @State private var showResultsScreen = false
     @State private var scanResults: [ScanItem] = []
     @State private var scannedPhoto: UIImage?
+    @State private var selectedTab: HomeTab = .home
     
     // Consistent grey color for bottom area
     private var bottomGreyColor: Color {

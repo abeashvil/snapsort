@@ -55,9 +55,15 @@ struct ScanService {
         
         // Make API request
         print("DEBUG: Checking for OpenAI API key...")
+        let envValue = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "NOT_SET"
+        print("DEBUG: OPENAI_API_KEY environment value exists: \(!envValue.isEmpty && envValue != "NOT_SET")")
+        print("DEBUG: OPENAI_API_KEY value length: \(envValue.count)")
+        print("DEBUG: OPENAI_API_KEY value preview: \(envValue.prefix(10))...")
+        
         guard let apiKey = APIConfig.openAIAPIKey else {
             print("DEBUG: ERROR - OpenAI API key not configured. Please set OPENAI_API_KEY environment variable in Xcode scheme settings.")
-            print("DEBUG: Environment variables: \(ProcessInfo.processInfo.environment.keys.filter { $0.contains("OPENAI") || $0.contains("API") })")
+            print("DEBUG: Environment variables with 'OPENAI' or 'API': \(ProcessInfo.processInfo.environment.keys.filter { $0.contains("OPENAI") || $0.contains("API") })")
+            print("DEBUG: Raw environment value: '\(envValue)'")
             throw ScanError.apiError("API key not configured. Please set OPENAI_API_KEY environment variable.")
         }
         print("DEBUG: OpenAI API key found (length: \(apiKey.count) characters)")
