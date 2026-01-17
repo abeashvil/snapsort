@@ -16,6 +16,7 @@ struct CameraView: View {
     @Binding var isPresented: Bool
     var onBack: (() -> Void)? = nil // Optional callback for back button
     @State private var cameraManager = CameraManager()
+    @State private var showPhotoLibrary = false
     
     var body: some View {
         ZStack {
@@ -74,16 +75,17 @@ struct CameraView: View {
                 
                 // Bottom controls - floating buttons
                 HStack {
-                    // Gallery icon (bottom left)
+                    // Gallery icon (bottom left) - opens photo library
                     Button(action: {
-                        print("DEBUG: Gallery button tapped")
-                        // TODO: Add gallery functionality
+                        print("DEBUG: Gallery button tapped - opening photo library")
+                        showPhotoLibrary = true
                     }) {
                         Image(systemName: "photo.on.rectangle")
                             .font(.system(size: 24, weight: .regular))
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.plain)
                     .padding(.leading, 32)
                     
                     Spacer()
@@ -93,8 +95,11 @@ struct CameraView: View {
                         print("DEBUG: Capture button tapped")
                         cameraManager.capturePhoto { image in
                             if let image = image {
+                                print("DEBUG: Photo captured, setting capturedImage")
                                 capturedImage = image
-                                isPresented = false
+                                // Don't dismiss camera here - let LandingPageView handle it via onChange
+                            } else {
+                                print("DEBUG: Photo capture returned nil")
                             }
                         }
                     }) {
@@ -159,6 +164,66 @@ struct CameraView: View {
         }
         .onDisappear {
             cameraManager.stopSession()
+        }
+        .sheet(isPresented: $showPhotoLibrary) {
+            PhotoLibraryPicker(selectedImage: $capturedImage, isPresented: $showPhotoLibrary)
+        }
+    }
+}
+
+/// Photo Library Picker using UIImagePickerController
+/// Allows user to select a photo from their photo library
+struct PhotoLibraryPicker: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+    @Binding var isPresented: Bool
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
+        picker.allowsEditing = false
+        print("DEBUG: Photo library picker created")
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {
+        // No updates needed
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: PhotoLibraryPicker
+        
+        init(_ parent: PhotoLibraryPicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                print("DEBUG: Photo selected from library, size: \(image.size)")
+                parent.selectedImage = image
+            } else {
+                print("DEBUG: Failed to extract image from picker")
+            }
+            // Dismiss the picker and then the SwiftUI sheet
+            picker.dismiss(animated: true) {
+                DispatchQueue.main.async {
+                    self.parent.isPresented = false
+                }
+            }
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            print("DEBUG: Photo library picker cancelled")
+            // Dismiss the picker and then the SwiftUI sheet
+            picker.dismiss(animated: true) {
+                DispatchQueue.main.async {
+                    self.parent.isPresented = false
+                }
+            }
         }
     }
 }
@@ -254,14 +319,27 @@ class CameraManager {
     
     func capturePhoto(completion: @escaping (UIImage?) -> Void) {
         guard let photoOutput = photoOutput else {
-            completion(nil)
+            print("DEBUG: Photo output not available")
+            DispatchQueue.main.async {
+                completion(nil)
+            }
             return
         }
         
-        let settings = AVCapturePhotoSettings()
-        
-        let photoCaptureDelegate = PhotoCaptureDelegate(completion: completion)
-        photoOutput.capturePhoto(with: settings, delegate: photoCaptureDelegate)
+        // Ensure we're on the session queue for capture
+        sessionQueue.async {
+            let settings = AVCapturePhotoSettings()
+            
+            // Retain the delegate - create a strong reference
+            let photoCaptureDelegate = PhotoCaptureDelegate(completion: { image in
+                DispatchQueue.main.async {
+                    completion(image)
+                }
+            })
+            
+            // Capture photo on the session queue
+            photoOutput.capturePhoto(with: settings, delegate: photoCaptureDelegate)
+        }
     }
     
     func stopSession() {
@@ -275,14 +353,24 @@ class CameraManager {
 }
 
 /// Photo capture delegate
+/// Retains itself until capture completes
 class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     private let completion: (UIImage?) -> Void
+    private var retainedSelf: PhotoCaptureDelegate?
     
     init(completion: @escaping (UIImage?) -> Void) {
         self.completion = completion
+        super.init()
+        // Retain self to prevent deallocation before capture completes
+        self.retainedSelf = self
     }
     
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        defer {
+            // Release self after completion
+            retainedSelf = nil
+        }
+        
         if let error = error {
             print("DEBUG: Photo capture error: \(error.localizedDescription)")
             completion(nil)
@@ -296,8 +384,15 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             return
         }
         
-        print("DEBUG: Photo captured successfully")
+        print("DEBUG: Photo captured successfully, size: \(image.size)")
         completion(image)
+    }
+    
+    // iOS 11+ method - use this if available
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+        if let error = error {
+            print("DEBUG: Photo capture finished with error: \(error.localizedDescription)")
+        }
     }
 }
 
