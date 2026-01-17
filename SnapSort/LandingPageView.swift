@@ -19,6 +19,9 @@ struct LandingPageView: View {
     @State private var showScanError = false
     @State private var scanErrorMessage = ""
     @State private var isScanning = false
+    @State private var showResultsScreen = false
+    @State private var scanResults: [ScanItem] = []
+    @State private var scannedPhoto: UIImage?
     
     // Consistent grey color for bottom area
     private var bottomGreyColor: Color {
@@ -135,6 +138,34 @@ struct LandingPageView: View {
         .sheet(isPresented: $showLoadingScreen) {
             LoadingScreen()
         }
+        .fullScreenCover(isPresented: $showResultsScreen) {
+            Group {
+                if let photo = scannedPhoto {
+                    ResultsScreen(
+                        scannedImage: photo,
+                        scanResults: scanResults,
+                        onBack: {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showResultsScreen = false
+                                scannedPhoto = nil
+                                scanResults = []
+                            }
+                        },
+                        onRescan: {
+                            showResultsScreen = false
+                            scannedPhoto = nil
+                            scanResults = []
+                            // Open camera again
+                            openCamera()
+                        }
+                    )
+                    .transition(.move(edge: .trailing))
+                } else {
+                    // Fallback if no photo (shouldn't happen)
+                    Text("No photo available")
+                }
+            }
+        }
         .alert("Camera not available", isPresented: $showCameraError) {
             Button("OK") { }
         } message: {
@@ -151,13 +182,24 @@ struct LandingPageView: View {
         }
         .onChange(of: capturedImage) { oldValue, newValue in
             // When a photo is captured, show loading screen and start scanning
-            if let image = newValue, !isScanning {
-                print("DEBUG: Photo captured, starting scan process")
-                showLoadingScreen = true
-                isScanning = true
-                Task {
-                    await scanPhoto(image)
+            print("DEBUG: onChange triggered - oldValue: \(oldValue != nil ? "has image" : "nil"), newValue: \(newValue != nil ? "has image" : "nil")")
+            if let image = newValue {
+                print("DEBUG: Image found in onChange, isScanning: \(isScanning)")
+                if !isScanning {
+                    print("DEBUG: Starting scan process - showing loading screen")
+                    showLoadingScreen = true
+                    isScanning = true
+                    print("DEBUG: Creating Task to scan photo")
+                    Task {
+                        print("DEBUG: Task started - about to call scanPhoto")
+                        await scanPhoto(image)
+                        print("DEBUG: Task completed")
+                    }
+                } else {
+                    print("DEBUG: Already scanning, skipping")
                 }
+            } else {
+                print("DEBUG: No image in newValue")
             }
         }
     }
@@ -178,28 +220,43 @@ struct LandingPageView: View {
     }
     
     /// Scans the captured photo (F-002)
-    /// Shows loading screen, runs scan, handles errors
+    /// Shows loading screen, runs scan, handles errors, then shows results
     private func scanPhoto(_ image: UIImage) async {
+        print("DEBUG: === Starting scanPhoto function ===")
+        print("DEBUG: Image size: \(image.size)")
         do {
-            print("DEBUG: Starting photo scan")
-            let _ = try await ScanService.scanPhoto(image)
-            print("DEBUG: Scan completed successfully")
-            // TODO: In B-004/B-005, navigate to results screen with scan results
-            // For now, just close the loading screen
+            print("DEBUG: Calling ScanService.scanPhoto...")
+            let results = try await ScanService.scanPhoto(image)
+            print("DEBUG: ScanService.scanPhoto returned successfully with \(results.count) items")
+            
+            // Show results screen with scan results (even if empty - user should see results screen)
             await MainActor.run {
                 showLoadingScreen = false
                 isScanning = false
-                capturedImage = nil // Reset for next scan
+                scannedPhoto = image
+                scanResults = results
+                capturedImage = nil // Reset binding but keep scannedPhoto
+                
+                // Show results screen even if no items found
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showResultsScreen = true
+                }
             }
         } catch {
-            print("DEBUG: Scan failed with error: \(error.localizedDescription)")
+            print("DEBUG: Scan failed with error: \(error)")
+            print("DEBUG: Error type: \(type(of: error))")
+            print("DEBUG: Error description: \(error.localizedDescription)")
+            if let nsError = error as NSError? {
+                print("DEBUG: NSError domain: \(nsError.domain), code: \(nsError.code)")
+                print("DEBUG: NSError userInfo: \(nsError.userInfo)")
+            }
             await MainActor.run {
                 isScanning = false
                 showLoadingScreen = false
                 if let scanError = error as? ScanError {
                     scanErrorMessage = scanError.localizedDescription
                 } else {
-                    scanErrorMessage = "Could not scan photo. Try again."
+                    scanErrorMessage = "Could not scan photo. Try again. Error: \(error.localizedDescription)"
                 }
                 showScanError = true
                 capturedImage = nil // Reset for retry
