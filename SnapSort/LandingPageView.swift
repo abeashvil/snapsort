@@ -7,9 +7,15 @@
 
 import SwiftUI
 
-/// Landing Page - First screen users see
+/// Landing Page / Home Screen - First screen users see
 /// Matches the design with app title, tagline, and animated falling items
-/// Includes swipe gesture to proceed to camera
+/// Includes bottom navigation bar with scan and history icons
+enum HomeTab {
+    case home
+    case scan
+    case history
+}
+
 struct LandingPageView: View {
     @State private var showCamera = false
     @Binding var capturedImage: UIImage?
@@ -99,20 +105,51 @@ struct LandingPageView: View {
                         
                         Spacer()
                         
-                        // Bottom call to action area - grey rectangle
+                        // Bottom navigation bar - grey rectangle with icons
                         Rectangle()
                             .fill(bottomGreyColor)
                             .frame(maxWidth: .infinity)
                             .frame(height: 100)
                             .overlay(
-                                Text("tap anywhere to continue")
-                                    .font(.system(size: 14, weight: .regular))
-                                    .foregroundColor(.gray.opacity(0.6))
+                                HStack(spacing: 0) {
+                                    // Scan icon (left side)
+                                    Button(action: {
+                                        print("DEBUG: Scan icon tapped")
+                                        selectedTab = .scan
+                                        openCamera()
+                                    }) {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "camera.fill")
+                                                .font(.system(size: 24, weight: .medium))
+                                                .foregroundColor(selectedTab == .scan ? .blue : .gray)
+                                            
+                                            Text("Scan")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(selectedTab == .scan ? .blue : .gray)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    
+                                    // History icon (right side)
+                                    Button(action: {
+                                        print("DEBUG: History icon tapped")
+                                        selectedTab = .history
+                                        // TODO: Navigate to history screen when implemented
+                                    }) {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "clock.fill")
+                                                .font(.system(size: 24, weight: .medium))
+                                                .foregroundColor(selectedTab == .history ? .blue : .gray)
+                                            
+                                            Text("History")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(selectedTab == .history ? .blue : .gray)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                }
+                                .padding(.horizontal, 20)
                             )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                openCamera()
-                            }
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
@@ -127,6 +164,20 @@ struct LandingPageView: View {
                         print("DEBUG: onBack callback called in LandingPageView")
                         withAnimation(.easeInOut(duration: 0.3)) {
                             showCamera = false
+                            selectedTab = .home // Return to home tab when camera closes
+                        }
+                    }
+                )
+                .transition(.move(edge: .trailing))
+                .zIndex(1)
+            }
+            
+            // History view placeholder (will be implemented later)
+            if selectedTab == .history && !showCamera {
+                HistoryPlaceholderView(
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            selectedTab = .home
                         }
                     }
                 )
